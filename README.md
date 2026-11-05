@@ -8,8 +8,9 @@ An inclusive Model United Nations platform for students, small schools, emerging
 - Registration with email, password, gender, school, grade, and nationality
 - Login flow and protected conference dashboard
 - Conference search, filters, and conference creation
-- Browser-local demo persistence for immediate preview
-- Python/Flask API scaffold using Firebase Authentication and Firestore
+- Firebase Authentication for real email/password registration, login, session persistence, and logout
+- Browser-local persistence for the extended delegate profile and demo conferences
+- Python/Flask API scaffold using Firebase Admin and Firestore
 
 ## Preview the frontend
 
@@ -21,12 +22,14 @@ python3 -m http.server 4173 --directory dist
 
 Then open `http://localhost:4173`.
 
-## Connect Firebase
+## Firebase
 
-1. Create a Firebase project and enable Email/Password Authentication and Firestore.
-2. Download a Firebase Admin service-account JSON file. Keep it outside the repository.
-3. Set `GOOGLE_APPLICATION_CREDENTIALS` to that file's absolute path.
-4. Install `backend/requirements.txt` and run the Flask app.
-5. Replace the frontend's local demo adapter with Firebase client authentication and the API endpoints in `backend/app.py`.
+The frontend is connected to the `bridgemun--main-project` Firebase web app. Email/Password authentication is enabled. The official Firebase 13.2.0 app and auth browser SDK files are vendored under `dist/vendor/firebase`, so authentication also initializes when `dist/index.html` is opened directly.
 
-The published static preview intentionally uses local browser storage because no Firebase project credentials were supplied. Never commit Firebase service-account credentials.
+For the optional Python API:
+
+1. Keep the Firebase Admin service-account JSON outside version control.
+2. Set `GOOGLE_APPLICATION_CREDENTIALS` to that file's absolute path.
+3. Install `backend/requirements.txt` and run the Flask app.
+
+Firebase web configuration is designed to be public in browser code. Firebase Admin service-account credentials are private and must never be committed or placed in `dist`.

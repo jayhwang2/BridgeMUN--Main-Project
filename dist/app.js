@@ -7,6 +7,20 @@ const publicSite = $('#public-site');
 const dashboard = $('#dashboard');
 const toast = $('#toast');
 
+const firebaseConfig = {
+  apiKey: 'AIzaSyAC9NU6HN5z4G2NDOotSn133bFCZUEUnpA',
+  authDomain: 'bridgemun--main-project.firebaseapp.com',
+  projectId: 'bridgemun--main-project',
+  storageBucket: 'bridgemun--main-project.firebasestorage.app',
+  messagingSenderId: '961548612794',
+  appId: '1:961548612794:web:4228ae5bc49b331fbdfe83',
+  measurementId: 'G-FYEPPXVH46'
+};
+
+const firebaseApp = window.firebase ? firebase.initializeApp(firebaseConfig) : null;
+const auth = firebaseApp ? firebase.auth() : null;
+document.documentElement.dataset.firebaseAuth = auth ? 'ready' : 'unavailable';
+
 const seedConferences = [
   { id: 1, committee: 'UNHCR', name: 'Migration & Human Dignity Forum', topic: 'Protecting displaced young people across borders', date: '21 Nov 2026', format: 'Online', level: 'Beginner friendly', delegates: 42 },
   { id: 2, committee: 'WHO', name: 'Health Equity Summit', topic: 'Closing rural and low-income healthcare gaps', date: '28 Nov 2026', format: 'Hybrid', level: 'Intermediate', delegates: 56 },
@@ -41,10 +55,6 @@ function showToast(message) {
   showToast.timer = setTimeout(() => { toast.hidden = true; }, 3200);
 }
 
-function getStoredUser() {
-  try { return JSON.parse(localStorage.getItem('bridgeMunUser')); } catch { return null; }
-}
-
 function friendlyName(email) {
   const base = (email || 'Delegate').split('@')[0].replace(/[._-]+/g, ' ');
   return base.replace(/\b\w/g, letter => letter.toUpperCase());
@@ -67,11 +77,32 @@ function enterDashboard(user) {
 }
 
 function leaveDashboard() {
-  sessionStorage.removeItem('bridgeMunSession');
   dashboard.hidden = true;
   publicSite.hidden = false;
   window.scrollTo(0, 0);
-  showToast('You have been logged out.');
+}
+
+function setAuthBusy(form, busy) {
+  const button = $('button[type="submit"]', form);
+  button.disabled = busy;
+  button.setAttribute('aria-busy', String(busy));
+  if (!button.dataset.label) button.dataset.label = button.innerHTML;
+  button.innerHTML = busy ? 'Please wait…' : button.dataset.label;
+}
+
+function authErrorMessage(error) {
+  const messages = {
+    'auth/email-already-in-use': 'An account already exists with this email. Try logging in instead.',
+    'auth/invalid-email': 'Please enter a valid email address.',
+    'auth/invalid-credential': 'The email or password is incorrect.',
+    'auth/user-not-found': 'The email or password is incorrect.',
+    'auth/wrong-password': 'The email or password is incorrect.',
+    'auth/weak-password': 'Use a stronger password with at least 8 characters.',
+    'auth/too-many-requests': 'Too many attempts. Please wait a moment and try again.',
+    'auth/network-request-failed': 'Could not reach Firebase. Check your internet connection.',
+    'auth/operation-not-allowed': 'Email/password sign-in is not enabled in Firebase yet.'
+  };
+  return messages[error?.code] || 'Authentication failed. Please try again.';
 }
 
 function renderConferences() {
@@ -101,27 +132,62 @@ $$('.modal-close', authModal).forEach(button => button.addEventListener('click',
 authModal.addEventListener('click', event => { if (event.target === authModal) setModal(authModal, false); });
 document.addEventListener('keydown', event => { if (event.key === 'Escape') { setModal(authModal, false); setModal(conferenceModal, false); } });
 
-$('#register-form').addEventListener('submit', event => {
+$('#register-form').addEventListener('submit', async event => {
   event.preventDefault();
+  if (!auth) {
+    showToast('Firebase could not load. Check your internet connection.');
+    return;
+  }
+  setAuthBusy(event.currentTarget, true);
   const data = Object.fromEntries(new FormData(event.currentTarget));
   const user = { email: data.email, school: data.school, grade: data.grade, gender: data.gender, nationality: data.nationality, name: friendlyName(data.email) };
-  localStorage.setItem('bridgeMunUser', JSON.stringify(user));
-  sessionStorage.setItem('bridgeMunSession', 'active');
-  enterDashboard(user);
-  showToast('Welcome to Bridge MUN — your profile is ready.');
+  try {
+    const credential = await auth.createUserWithEmailAndPassword(data.email, data.password);
+    await credential.user.updateProfile({ displayName: user.name });
+    localStorage.setItem(`bridgeMunProfile:${credential.user.uid}`, JSON.stringify(user));
+    enterDashboard(user);
+    event.currentTarget.reset();
+    showToast('Welcome to Bridge MUN — your Firebase account is ready.');
+  } catch (error) {
+    showToast(authErrorMessage(error));
+  } finally {
+    setAuthBusy(event.currentTarget, false);
+  }
 });
 
-$('#login-form').addEventListener('submit', event => {
+$('#login-form').addEventListener('submit', async event => {
   event.preventDefault();
+  if (!auth) {
+    showToast('Firebase could not load. Check your internet connection.');
+    return;
+  }
+  setAuthBusy(event.currentTarget, true);
   const data = Object.fromEntries(new FormData(event.currentTarget));
-  const saved = getStoredUser();
-  const user = saved && saved.email.toLowerCase() === data.email.toLowerCase() ? saved : { email: data.email, name: friendlyName(data.email), school: 'Bridge MUN Delegate' };
-  sessionStorage.setItem('bridgeMunSession', 'active');
-  enterDashboard(user);
-  showToast(`Welcome back, ${user.name || friendlyName(user.email)}.`);
+  const remember = $('input[type="checkbox"]', event.currentTarget).checked;
+  try {
+    await auth.setPersistence(remember ? firebase.auth.Auth.Persistence.LOCAL : firebase.auth.Auth.Persistence.SESSION);
+    const credential = await auth.signInWithEmailAndPassword(data.email, data.password);
+    const profile = JSON.parse(localStorage.getItem(`bridgeMunProfile:${credential.user.uid}`) || 'null');
+    const user = profile || { email: credential.user.email, name: credential.user.displayName || friendlyName(credential.user.email), school: 'Bridge MUN Delegate' };
+    enterDashboard(user);
+    event.currentTarget.reset();
+    showToast(`Welcome back, ${user.name || friendlyName(user.email)}.`);
+  } catch (error) {
+    showToast(authErrorMessage(error));
+  } finally {
+    setAuthBusy(event.currentTarget, false);
+  }
 });
 
-$('#logout-button').addEventListener('click', leaveDashboard);
+$('#logout-button').addEventListener('click', async () => {
+  if (!auth) return leaveDashboard();
+  try {
+    await auth.signOut();
+    showToast('You have been logged out.');
+  } catch (error) {
+    showToast('Could not log out. Please try again.');
+  }
+});
 $('#create-conference-button').addEventListener('click', () => setModal(conferenceModal, true));
 $('.modal-close', conferenceModal).addEventListener('click', () => setModal(conferenceModal, false));
 conferenceModal.addEventListener('click', event => { if (event.target === conferenceModal) setModal(conferenceModal, false); });
@@ -148,4 +214,17 @@ document.addEventListener('click', event => { if (event.target.closest('[data-jo
 const observer = new IntersectionObserver(entries => entries.forEach(entry => { if (entry.isIntersecting) entry.target.classList.add('visible'); }), { threshold: .12 });
 $$('.reveal').forEach(element => observer.observe(element));
 renderConferences();
-if (sessionStorage.getItem('bridgeMunSession') === 'active' && getStoredUser()) enterDashboard(getStoredUser());
+if (auth) {
+  auth.onAuthStateChanged(firebaseUser => {
+    if (!firebaseUser) {
+      leaveDashboard();
+      return;
+    }
+    const profile = JSON.parse(localStorage.getItem(`bridgeMunProfile:${firebaseUser.uid}`) || 'null');
+    enterDashboard(profile || {
+      email: firebaseUser.email,
+      name: firebaseUser.displayName || friendlyName(firebaseUser.email),
+      school: 'Bridge MUN Delegate'
+    });
+  });
+}
