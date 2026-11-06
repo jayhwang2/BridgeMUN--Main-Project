@@ -8,6 +8,8 @@ An inclusive Model United Nations platform for students, small schools, emerging
 - Registration with email, password, gender, school, grade, and nationality
 - Login flow and protected conference dashboard
 - Conference search, filters, and conference creation
+- Full MUN forum builder with topic, date, duration, country-count presets, country search, random selection, and per-country AI delegates
+- Working forum room with agenda phases, countdown timer, delegation roster, and committee messages
 - Firebase Authentication for real email/password registration, login, session persistence, and logout
 - Browser-local persistence for the extended delegate profile and demo conferences
 - Python/Flask API scaffold using Firebase Admin and Firestore

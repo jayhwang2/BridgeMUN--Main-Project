@@ -7,6 +7,7 @@
   <meta name="description" content="Bridge MUN connects students, schools, and AI delegates for inclusive Model United Nations collaboration.">
   <title>Bridge MUN — Diplomacy without borders</title>
   <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="forum.css">
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
@@ -210,18 +211,42 @@
     <div class="dashboard-main">
       <header class="dashboard-topbar"><button class="dashboard-menu" type="button">☰</button><div class="dash-search"><span>⌕</span><input type="search" id="conference-search" placeholder="Search conferences"></div><button class="notification" type="button" aria-label="Notifications">♢<i></i></button><button class="profile-chip" type="button"><span class="avatar avatar-blue" id="user-initials">JD</span><span><b id="user-name">Delegate</b><small id="user-school">Bridge MUN</small></span><i>⌄</i></button></header>
       <main class="dashboard-content">
-        <section class="welcome-row"><div><p class="dash-eyebrow">YOUR GLOBAL FORUM</p><h1>Good <span id="day-period">morning</span>, <span id="welcome-name">Delegate</span>.</h1><p>Discover a conference and bring your perspective to the table.</p></div><button class="button" id="create-conference-button" type="button">＋ Create conference</button></section>
+        <section class="welcome-row"><div><p class="dash-eyebrow">YOUR GLOBAL FORUM</p><h1>Good <span id="day-period">morning</span>, <span id="welcome-name">Delegate</span>.</h1><p>Discover a forum or create a new MUN room of your own.</p></div><button class="button create-forum-cta" id="create-conference-button" type="button"><span>＋</span> Create New Forum</button></section>
         <section class="feature-conference">
           <div><span class="live-label">● FEATURED CONFERENCE</span><h2>Global Youth Climate Assembly</h2><p>UNEP · Building equitable pathways for climate adaptation</p><div class="conference-meta"><span>◷ 14–16 Nov 2026</span><span>◎ Online</span><span>♙ 84 delegates</span></div><button class="button button-white" type="button" data-join>View conference <span>→</span></button></div>
           <div class="feature-emblem" aria-hidden="true"><span>UNEP</span><svg viewBox="0 0 160 160"><circle cx="80" cy="80" r="59"/><path d="M80 36c-20 13-27 31-20 53 16-3 27-12 33-29 10 23 5 44-13 63M48 105c-9-16-10-32-3-48M112 105c9-16 10-32 3-48"/></svg></div>
         </section>
-        <section class="conference-section"><div class="conference-heading"><div><h2>Upcoming conferences</h2><p>Open forums looking for delegates like you.</p></div><div class="filter-buttons"><button class="active" data-filter="all">All</button><button data-filter="beginner">Beginner friendly</button><button data-filter="online">Online</button></div></div><div class="conference-grid" id="conference-grid"></div></section>
+        <section class="conference-section"><div class="conference-heading"><div><h2>Upcoming forums</h2><p>Open rooms looking for delegates like you.</p></div><div class="filter-buttons"><button class="active" data-filter="all">All</button><button data-filter="beginner">Beginner friendly</button><button data-filter="online">Online</button></div></div><div class="conference-grid" id="conference-grid"></div></section>
+      </main>
+      <main class="forum-room" id="forum-room" hidden>
+        <button class="room-back" id="room-back" type="button">← Back to forums</button>
+        <section class="room-hero">
+          <div><p class="dash-eyebrow">LIVE MUN FORUM</p><h1 id="room-topic">Forum topic</h1><p id="room-subtopic">Forum subtopic</p><div class="room-meta" id="room-meta"></div></div>
+          <div class="room-hero-actions"><span class="room-status" id="room-status">● Ready</span><button class="button" id="start-session" type="button">Start Session</button></div>
+        </section>
+        <section class="room-layout">
+          <div class="room-main-column">
+            <article class="room-panel"><div class="panel-heading"><div><p class="dash-eyebrow">COMMITTEE FLOW</p><h2>Session agenda</h2></div><div class="session-timer" id="session-timer">30:00</div></div><div class="agenda-steps" id="agenda-steps"><button class="active" type="button" data-phase="Roll Call"><span>01</span><div><b>Roll Call</b><small>Confirm present countries</small></div></button><button type="button" data-phase="General Speakers List"><span>02</span><div><b>General Speakers List</b><small>Opening policy statements</small></div></button><button type="button" data-phase="Moderated Caucus"><span>03</span><div><b>Moderated Caucus</b><small>Focused committee debate</small></div></button><button type="button" data-phase="Voting Procedure"><span>04</span><div><b>Voting Procedure</b><small>Decide on draft resolutions</small></div></button></div></article>
+            <article class="room-panel discussion-panel"><div class="panel-heading"><div><p class="dash-eyebrow">COMMITTEE CHANNEL</p><h2>Forum messages</h2></div><span class="online-dot">● Live</span></div><div class="message-list" id="message-list"><div class="room-message system-message"><span>BM</span><p><b>Bridge MUN</b><small>The room is ready. Start the session when your delegates arrive.</small></p></div></div><form class="message-form" id="message-form"><input id="message-input" placeholder="Send a message to the committee…" autocomplete="off"><button type="submit">Send →</button></form></article>
+          </div>
+          <aside class="room-panel delegation-panel"><div class="panel-heading"><div><p class="dash-eyebrow">DELEGATIONS</p><h2>Participating countries</h2></div><span id="room-country-count">0</span></div><div class="room-country-list" id="room-country-list"></div></aside>
+        </section>
       </main>
     </div>
   </div>
 
   <div class="modal-backdrop" id="conference-modal" role="dialog" aria-modal="true" aria-labelledby="conference-title" hidden>
-    <div class="auth-modal conference-modal"><button class="modal-close" type="button" aria-label="Close">×</button><p class="eyebrow"><span></span> Host a new forum</p><h2 id="conference-title">Create conference</h2><p>Set the essentials now. You can add committees and delegates later.</p><form id="conference-form"><div class="field full"><label for="conf-name">Conference name</label><input id="conf-name" name="name" required placeholder="e.g. Asia-Pacific Youth Assembly"></div><div class="field"><label for="conf-committee">Committee</label><input id="conf-committee" name="committee" required placeholder="e.g. UNESCO"></div><div class="field"><label for="conf-format">Format</label><select id="conf-format" name="format"><option>Online</option><option>Hybrid</option><option>In person</option></select></div><div class="field"><label for="conf-date">Start date</label><input id="conf-date" name="date" type="date" required></div><div class="field"><label for="conf-level">Experience level</label><select id="conf-level" name="level"><option>Beginner friendly</option><option>Intermediate</option><option>Advanced</option></select></div><button class="button auth-submit full" type="submit">Create conference <span>→</span></button></form></div>
+    <div class="auth-modal conference-modal forum-builder"><button class="modal-close" type="button" aria-label="Close">×</button><p class="eyebrow"><span></span> Build a MUN room</p><h2 id="conference-title">Forum Details</h2><p>Configure the countries, AI delegates, and session settings for your forum.</p>
+      <form id="conference-form">
+        <div class="field full"><label for="forum-topic">◎ &nbsp; Topic</label><input id="forum-topic" name="topic" required placeholder="e.g. Climate Change and International Cooperation"></div>
+        <div class="field full"><label for="forum-subtopic">◇ &nbsp; Subtopic <small>(optional)</small></label><input id="forum-subtopic" name="subtopic" placeholder="Narrow the focus (e.g. island nations & sea-level rise)"></div>
+        <div class="field"><label for="forum-date">▣ &nbsp; Date</label><input id="forum-date" name="date" type="date" required></div>
+        <fieldset class="duration-field"><legend>◷ &nbsp; Duration (Min)</legend><label><input type="radio" name="duration" value="30" checked><span>30 Min</span></label><label><input type="radio" name="duration" value="60"><span>60 Min</span></label></fieldset>
+        <div class="country-capacity full"><label for="country-count">Number of Participating Countries</label><div class="range-card"><div><small>Min: 7</small><strong id="country-count-value">30</strong><small>Max: 50</small></div><input id="country-count" type="range" min="7" max="50" value="30"></div><div class="country-presets"><button type="button" data-country-preset="g7">G7</button><button type="button" data-country-preset="10">10 Countries</button><button class="active" type="button" data-country-preset="30">30 Countries</button><button type="button" data-country-preset="50">50 Countries</button></div></div>
+        <div class="country-selector full"><div class="country-selector-heading"><label for="country-search">Countries <b id="selected-country-count">(0/30)</b></label><button type="button" id="random-countries">⌁ &nbsp; Random</button></div><div class="country-search-wrap"><span>⌕</span><input id="country-search" type="search" placeholder="Search countries to add…" autocomplete="off"><div class="country-results" id="country-results" hidden></div></div><div class="selected-countries" id="selected-countries"><p>Select countries manually or use Random to fill the forum.</p></div><div class="ai-controls"><span>AI enabled countries: <b id="ai-country-count">0 / 0</b></span><div><button type="button" id="ai-all-on">AI ALL ON</button><button type="button" id="ai-all-off">AI ALL OFF</button></div></div></div>
+        <button class="button auth-submit full save-forum" type="submit" disabled>Save Forum & Continue <span>→</span></button>
+      </form>
+    </div>
   </div>
 
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
