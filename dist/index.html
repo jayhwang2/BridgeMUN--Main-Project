@@ -222,11 +222,12 @@
         <button class="room-back" id="room-back" type="button">← Back to forums</button>
         <section class="room-hero">
           <div><p class="dash-eyebrow">LIVE MUN FORUM</p><h1 id="room-topic">Forum topic</h1><p id="room-subtopic">Forum subtopic</p><div class="room-meta" id="room-meta"></div></div>
-          <div class="room-hero-actions"><span class="room-status" id="room-status">● Ready</span><button class="button" id="start-session" type="button">Start Session</button></div>
+          <div class="room-hero-actions"><span class="room-status" id="room-status">● Ready</span><span class="assignment-badge" id="human-assignment">Assigning your country…</span><button class="button" id="start-session" type="button">Start Conference</button></div>
         </section>
         <section class="room-layout">
           <div class="room-main-column">
             <article class="room-panel"><div class="panel-heading"><div><p class="dash-eyebrow">COMMITTEE FLOW</p><h2>Session agenda</h2></div><div class="session-timer" id="session-timer">30:00</div></div><div class="agenda-steps" id="agenda-steps"><button class="active" type="button" data-phase="Roll Call"><span>01</span><div><b>Roll Call</b><small>Confirm present countries</small></div></button><button type="button" data-phase="General Speakers List"><span>02</span><div><b>General Speakers List</b><small>Opening policy statements</small></div></button><button type="button" data-phase="Moderated Caucus"><span>03</span><div><b>Moderated Caucus</b><small>Focused committee debate</small></div></button><button type="button" data-phase="Voting Procedure"><span>04</span><div><b>Voting Procedure</b><small>Decide on draft resolutions</small></div></button></div></article>
+            <article class="room-panel speech-order-panel"><div class="panel-heading"><div><p class="dash-eyebrow">SPEAKERS LIST</p><h2>Random speech order</h2></div><span class="order-state" id="speech-order-state">Created when the conference starts</span></div><div class="speech-order-list" id="speech-order-list"><p>Start the conference to shuffle all delegations into a speaking order.</p></div></article>
             <article class="room-panel discussion-panel"><div class="panel-heading"><div><p class="dash-eyebrow">COMMITTEE CHANNEL</p><h2>Forum messages</h2></div><span class="online-dot">● Live</span></div><div class="message-list" id="message-list"><div class="room-message system-message"><span>BM</span><p><b>Bridge MUN</b><small>The room is ready. Start the session when your delegates arrive.</small></p></div></div><form class="message-form" id="message-form"><input id="message-input" placeholder="Send a message to the committee…" autocomplete="off"><button type="submit">Send →</button></form></article>
           </div>
           <aside class="room-panel delegation-panel"><div class="panel-heading"><div><p class="dash-eyebrow">DELEGATIONS</p><h2>Participating countries</h2></div><span id="room-country-count">0</span></div><div class="room-country-list" id="room-country-list"></div></aside>
@@ -252,6 +253,7 @@
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
   <script src="vendor/firebase/firebase-app-compat.js"></script>
   <script src="vendor/firebase/firebase-auth-compat.js"></script>
+  <script src="vendor/firebase/firebase-firestore-compat.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

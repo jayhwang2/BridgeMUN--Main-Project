@@ -19,7 +19,10 @@ const firebaseConfig = {
 
 const firebaseApp = window.firebase ? firebase.initializeApp(firebaseConfig) : null;
 const auth = firebaseApp ? firebase.auth() : null;
+const db = firebaseApp && firebase.firestore ? firebase.firestore() : null;
+const API_BASE = window.BRIDGE_MUN_API_BASE || (['127.0.0.1', 'localhost'].includes(window.location.hostname) ? 'http://127.0.0.1:4181' : '');
 document.documentElement.dataset.firebaseAuth = auth ? 'ready' : 'unavailable';
+document.documentElement.dataset.firestore = db ? 'ready' : 'unavailable';
 
 const seedConferences = [
   { id: 1, committee: 'UNHCR', name: 'Migration & Human Dignity Forum', topic: 'Protecting displaced young people across borders', date: '21 Nov 2026', format: 'Online', level: 'Beginner friendly', delegates: 42 },
@@ -40,6 +43,7 @@ let forumBuilder = { limit: 30, countries: [] };
 let activeForum = null;
 let sessionSeconds = 0;
 let sessionTimer = null;
+let forumUnsubscribe = null;
 
 function setModal(modal, open) {
   modal.hidden = !open;
@@ -64,6 +68,89 @@ function showToast(message) {
   toast.hidden = false;
   clearTimeout(showToast.timer);
   showToast.timer = setTimeout(() => { toast.hidden = true; }, 3200);
+}
+
+function forumForFirestore(forum, user) {
+  return {
+    topic: forum.name,
+    subtopic: forum.subtopic || '',
+    date: forum.rawDate || '',
+    formattedDate: forum.date,
+    duration: Number(forum.duration || 30),
+    format: forum.format || `${forum.duration || 30} min · Online`,
+    level: forum.level || 'Beginner friendly',
+    countries: (forum.countries || []).map(country => ({ name: country.name, flag: country.flag, ai: Boolean(country.ai) })),
+    assignments: forum.assignments || {},
+    speechOrder: forum.speechOrder || [],
+    countryCount: Number(forum.delegates || forum.countries?.length || 0),
+    createdBy: user.uid,
+    createdByEmail: user.email || '',
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+  };
+}
+
+function forumFromFirestore(doc) {
+  const data = doc.data();
+  return {
+    id: doc.id,
+    firestoreId: doc.id,
+    committee: 'CUSTOM FORUM',
+    name: data.topic,
+    subtopic: data.subtopic || '',
+    topic: data.subtopic || 'A delegate-led Bridge MUN forum',
+    date: data.formattedDate || formatForumDate(data.date),
+    rawDate: data.date || '',
+    format: data.format || `${data.duration || 30} min · Online`,
+    duration: Number(data.duration || 30),
+    level: data.level || 'Beginner friendly',
+    delegates: Number(data.countryCount || data.countries?.length || 0),
+    countries: data.countries || [],
+    assignments: data.assignments || {},
+    speechOrder: data.speechOrder || [],
+    sessionStartedAt: data.sessionStartedAt?.toMillis?.() || null,
+    createdAt: data.createdAt?.toMillis?.() || 0,
+    isForum: true
+  };
+}
+
+async function migrateLocalForums(user) {
+  if (!db) return;
+  const localForums = conferences.filter(item => item.isForum && !item.firestoreId);
+  for (const forum of localForums) {
+    const payload = forumForFirestore(forum, user);
+    payload.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+    const doc = await db.collection('forums').add(payload);
+    forum.firestoreId = doc.id;
+    forum.id = doc.id;
+  }
+  if (localForums.length) localStorage.setItem('bridgeMunConferences', JSON.stringify(conferences));
+}
+
+async function subscribeToUserForums(user) {
+  if (!db) {
+    showToast('Firestore could not load. Forum cloud saving is unavailable.');
+    return;
+  }
+  if (forumUnsubscribe) forumUnsubscribe();
+  try {
+    await migrateLocalForums(user);
+    forumUnsubscribe = db.collection('forums').where('createdBy', '==', user.uid).onSnapshot(snapshot => {
+      const remoteForums = snapshot.docs.map(forumFromFirestore).sort((a, b) => b.createdAt - a.createdAt);
+      const publicConferences = conferences.filter(item => !item.isForum);
+      conferences = [...remoteForums, ...publicConferences];
+      localStorage.setItem('bridgeMunConferences', JSON.stringify(conferences));
+      renderConferences();
+      document.documentElement.dataset.firestoreSync = 'ready';
+    }, error => {
+      document.documentElement.dataset.firestoreSync = 'error';
+      console.error('Firestore forum sync failed', error);
+      showToast('Could not sync forums with Firestore.');
+    });
+  } catch (error) {
+    document.documentElement.dataset.firestoreSync = 'error';
+    console.error('Firestore forum migration failed', error);
+    showToast('Could not save existing forums to Firestore.');
+  }
 }
 
 function friendlyName(email) {
@@ -125,7 +212,7 @@ function renderConferences() {
   });
   $('#conference-grid').innerHTML = list.length ? list.map(item => `
     <article class="conference-card">
-      <span class="committee-tag">${escapeHtml(item.committee)}</span>
+      <div class="card-tags"><span class="committee-tag">${escapeHtml(item.committee)}</span>${item.firestoreId ? '<span class="cloud-saved">☁ Firestore</span>' : ''}</div>
       <h3>${escapeHtml(item.name)}</h3>
       <p>${escapeHtml(item.topic)}</p>
       <div class="card-meta"><span>◷ ${escapeHtml(item.date)}</span><span>◎ ${escapeHtml(item.format)}</span></div>
@@ -138,7 +225,16 @@ function escapeHtml(value) {
 }
 
 function shuffledCountries() {
-  return [...countryCatalog].sort(() => Math.random() - 0.5);
+  return shuffle([...countryCatalog]);
+}
+
+function shuffle(items) {
+  const result = [...items];
+  for (let index = result.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [result[index], result[swapIndex]] = [result[swapIndex], result[index]];
+  }
+  return result;
 }
 
 function updateForumBuilder() {
@@ -196,25 +292,111 @@ function updateRoomTimer() {
   $('#session-timer').textContent = `${minutes}:${seconds}`;
 }
 
-function openForumRoom(forum) {
+function currentPhase() {
+  return $('#agenda-steps button.active')?.dataset.phase || 'Roll Call';
+}
+
+function appendRoomMessage(author, message, { ai = false, system = false } = {}) {
+  const classes = ['room-message', ai ? 'ai-message' : '', system ? 'system-message' : ''].filter(Boolean).join(' ');
+  const initials = system ? 'BM' : ai ? 'AI' : author.slice(0, 2).toUpperCase();
+  $('#message-list').insertAdjacentHTML('beforeend', `<div class="${classes}"><span>${escapeHtml(initials)}</span><p><b>${escapeHtml(author)}</b><small>${escapeHtml(message)}</small></p></div>`);
+  $('#message-list').scrollTop = $('#message-list').scrollHeight;
+}
+
+function renderSpeechOrder(forum) {
+  const order = forum.speechOrder || [];
+  $('#speech-order-state').textContent = order.length ? `${order.length} delegations · saved to Firestore` : 'Created when the conference starts';
+  $('#speech-order-list').innerHTML = order.length ? order.map((countryName, index) => {
+    const country = forum.countries.find(item => item.name === countryName) || { name: countryName, ai: false };
+    return `<div class="speech-order-item ${country.ai ? 'ai' : ''}"><span>${index + 1}</span><b>${escapeHtml(country.name)}</b><small>${country.ai ? 'AI delegate' : 'Human delegate'}</small></div>`;
+  }).join('') : '<p>Start the conference to shuffle all delegations into a speaking order.</p>';
+}
+
+function renderRoomCountries(forum) {
+  const assignments = forum.assignments || {};
+  const currentUid = auth?.currentUser?.uid;
+  const assignedCountries = new Map(Object.values(assignments).map(assignment => [assignment.country, assignment]));
+  $('#room-country-list').innerHTML = forum.countries.map(country => {
+    const assignment = assignedCountries.get(country.name);
+    const isMine = assignment?.uid === currentUid;
+    const subtitle = country.ai ? 'GPT-powered delegate' : isMine ? `You · ${assignment.displayName}` : assignment ? assignment.displayName : 'Open human seat';
+    const control = country.ai
+      ? `<button class="ai-speech-button" type="button" data-ai-speech="${escapeHtml(country.name)}" ${forum.speechOrder?.length ? '' : 'disabled'}>Speech</button>`
+      : `<i>${isMine ? 'YOU' : 'H'}</i>`;
+    return `<div class="${isMine ? 'assigned-seat' : ''}"><span>${country.flag}</span><p><b>${escapeHtml(country.name)}</b><small>${escapeHtml(subtitle)}</small></p>${control}</div>`;
+  }).join('');
+
+  const mine = currentUid ? assignments[currentUid] : null;
+  const hasHumanSeats = forum.countries.some(country => !country.ai);
+  $('#human-assignment').textContent = mine ? `${mine.flag || '◎'} You represent ${mine.country}` : hasHumanSeats ? 'No human seat is currently available' : 'AI-only conference';
+}
+
+async function assignCurrentUserToCountry(forum) {
+  if (!db || !auth?.currentUser || !forum.firestoreId) return null;
+  if (!(forum.countries || []).some(country => !country.ai)) return null;
+  const user = auth.currentUser;
+  const forumRef = db.collection('forums').doc(forum.firestoreId);
+  return db.runTransaction(async transaction => {
+    const snapshot = await transaction.get(forumRef);
+    if (!snapshot.exists) throw new Error('Forum not found');
+    const data = snapshot.data();
+    const assignments = data.assignments || {};
+    if (assignments[user.uid]) {
+      forum.assignments = assignments;
+      return assignments[user.uid];
+    }
+    const occupied = new Set(Object.values(assignments).map(assignment => assignment.country));
+    const available = (data.countries || []).filter(country => !country.ai && !occupied.has(country.name));
+    if (!available.length) {
+      forum.assignments = assignments;
+      return null;
+    }
+    const country = available[Math.floor(Math.random() * available.length)];
+    const assignment = {
+      uid: user.uid,
+      displayName: user.displayName || friendlyName(user.email),
+      country: country.name,
+      flag: country.flag,
+      assignedAt: new Date().toISOString()
+    };
+    transaction.update(forumRef, {
+      [`assignments.${user.uid}`]: assignment,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    forum.assignments = { ...assignments, [user.uid]: assignment };
+    return assignment;
+  });
+}
+
+async function openForumRoom(forum) {
   activeForum = forum;
   sessionSeconds = Number(forum.duration || 30) * 60;
   clearInterval(sessionTimer);
   sessionTimer = null;
-  $('#start-session').textContent = 'Start Session';
+  $('#start-session').textContent = forum.speechOrder?.length ? 'Start Conference' : 'Start Conference';
   $('#room-status').textContent = '● Ready';
   $('#room-status').classList.remove('live');
   $('#room-topic').textContent = forum.name;
   $('#room-subtopic').textContent = forum.subtopic || forum.topic;
   $('#room-meta').innerHTML = `<span>▣ ${escapeHtml(forum.date)}</span><span>◷ ${forum.duration} minutes</span><span>◎ Online</span>`;
   $('#room-country-count').textContent = forum.countries.length;
-  $('#room-country-list').innerHTML = forum.countries.map(country => `<div><span>${country.flag}</span><p><b>${escapeHtml(country.name)}</b><small>${country.ai ? 'AI Delegate' : 'Human Delegate'}</small></p><i class="${country.ai ? 'ai' : ''}">${country.ai ? 'AI' : 'H'}</i></div>`).join('');
+  renderRoomCountries(forum);
+  renderSpeechOrder(forum);
   $('#message-list').innerHTML = '<div class="room-message system-message"><span>BM</span><p><b>Bridge MUN</b><small>The room is ready. Start the session when your delegates arrive.</small></p></div>';
   $$('#agenda-steps button').forEach((button, index) => button.classList.toggle('active', index === 0));
   updateRoomTimer();
   $('.dashboard-content').hidden = true;
   $('#forum-room').hidden = false;
   window.scrollTo(0, 0);
+  try {
+    const assignment = await assignCurrentUserToCountry(forum);
+    renderRoomCountries(forum);
+    if (assignment) showToast(`You were randomly assigned to represent ${assignment.country}.`);
+  } catch (error) {
+    console.error('Country assignment failed', error);
+    $('#human-assignment').textContent = 'Country assignment could not be saved';
+    showToast('Could not assign a human country. Please re-enter the forum.');
+  }
 }
 
 function closeForumRoom() {
@@ -291,7 +473,7 @@ $('#logout-button').addEventListener('click', async () => {
 $('#create-conference-button').addEventListener('click', openForumBuilder);
 $('.modal-close', conferenceModal).addEventListener('click', () => setModal(conferenceModal, false));
 conferenceModal.addEventListener('click', event => { if (event.target === conferenceModal) setModal(conferenceModal, false); });
-$('#conference-form').addEventListener('submit', event => {
+$('#conference-form').addEventListener('submit', async event => {
   event.preventDefault();
   const data = Object.fromEntries(new FormData(event.currentTarget));
   if (forumBuilder.countries.length !== forumBuilder.limit) {
@@ -313,13 +495,30 @@ $('#conference-form').addEventListener('submit', event => {
     countries: forumBuilder.countries.map(country => ({ ...country })),
     isForum: true
   };
-  conferences.unshift(forum);
-  localStorage.setItem('bridgeMunConferences', JSON.stringify(conferences));
-  event.currentTarget.reset();
-  setModal(conferenceModal, false);
-  renderConferences();
-  openForumRoom(forum);
-  showToast('Your forum room is ready.');
+  if (!db || !auth?.currentUser) {
+    showToast('Sign in and check your connection before saving to Firestore.');
+    return;
+  }
+  setAuthBusy(event.currentTarget, true);
+  try {
+    const payload = forumForFirestore(forum, auth.currentUser);
+    payload.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+    const doc = await db.collection('forums').add(payload);
+    forum.id = doc.id;
+    forum.firestoreId = doc.id;
+    conferences.unshift(forum);
+    localStorage.setItem('bridgeMunConferences', JSON.stringify(conferences));
+    event.currentTarget.reset();
+    setModal(conferenceModal, false);
+    renderConferences();
+    openForumRoom(forum);
+    showToast('Forum saved to Firestore and ready to use.');
+  } catch (error) {
+    console.error('Firestore forum save failed', error);
+    showToast('Firestore save failed. Please try again.');
+  } finally {
+    setAuthBusy(event.currentTarget, false);
+  }
 });
 
 $('#country-count').addEventListener('input', event => setCountryLimit(event.target.value));
@@ -376,17 +575,45 @@ document.addEventListener('click', event => {
 });
 
 $('#room-back').addEventListener('click', closeForumRoom);
-$('#start-session').addEventListener('click', event => {
+$('#start-session').addEventListener('click', async event => {
+  const startButton = event.currentTarget;
   if (sessionTimer) {
     clearInterval(sessionTimer);
     sessionTimer = null;
-    event.currentTarget.textContent = 'Resume Session';
+    startButton.textContent = 'Resume Conference';
     $('#room-status').textContent = '● Paused';
     $('#room-status').classList.remove('live');
     return;
   }
+  if (!activeForum?.speechOrder?.length) {
+    if (!db || !activeForum.firestoreId) {
+      showToast('This forum must be saved to Firestore before it can start.');
+      return;
+    }
+    startButton.disabled = true;
+    startButton.textContent = 'Creating order…';
+    try {
+      activeForum.speechOrder = shuffle(activeForum.countries.map(country => country.name));
+      await db.collection('forums').doc(activeForum.firestoreId).update({
+        speechOrder: activeForum.speechOrder,
+        sessionStartedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      renderSpeechOrder(activeForum);
+      renderRoomCountries(activeForum);
+      appendRoomMessage('Bridge MUN', 'The random speakers list is ready. AI countries can now deliver a speech.', { system: true });
+    } catch (error) {
+      activeForum.speechOrder = [];
+      console.error('Speech order save failed', error);
+      showToast('Could not save the speech order to Firestore.');
+      startButton.textContent = 'Start Conference';
+      startButton.disabled = false;
+      return;
+    }
+    startButton.disabled = false;
+  }
   if (sessionSeconds <= 0) sessionSeconds = Number(activeForum?.duration || 30) * 60;
-  event.currentTarget.textContent = 'Pause Session';
+  startButton.textContent = 'Pause Conference';
   $('#room-status').textContent = '● Live';
   $('#room-status').classList.add('live');
   sessionTimer = setInterval(() => {
@@ -395,7 +622,7 @@ $('#start-session').addEventListener('click', event => {
     if (sessionSeconds <= 0) {
       clearInterval(sessionTimer);
       sessionTimer = null;
-      event.currentTarget.textContent = 'Restart Session';
+      startButton.textContent = 'Restart Conference';
       $('#room-status').textContent = '● Complete';
       $('#room-status').classList.remove('live');
       showToast('The forum timer is complete.');
@@ -412,9 +639,52 @@ $('#message-form').addEventListener('submit', event => {
   const message = input.value.trim();
   if (!message) return;
   const name = $('#user-name').textContent || 'Chair';
-  $('#message-list').insertAdjacentHTML('beforeend', `<div class="room-message"><span>${escapeHtml(name.slice(0, 2).toUpperCase())}</span><p><b>${escapeHtml(name)}</b><small>${escapeHtml(message)}</small></p></div>`);
+  appendRoomMessage(name, message);
   input.value = '';
-  $('#message-list').scrollTop = $('#message-list').scrollHeight;
+});
+
+$('#room-country-list').addEventListener('click', async event => {
+  const button = event.target.closest('[data-ai-speech]');
+  if (!button || !activeForum) return;
+  if (!activeForum.speechOrder?.length) {
+    showToast('Start the conference before asking an AI delegate to speak.');
+    return;
+  }
+  if (!auth?.currentUser) {
+    showToast('Please sign in again before generating a speech.');
+    return;
+  }
+  const country = button.dataset.aiSpeech;
+  const previousLabel = button.textContent;
+  button.disabled = true;
+  button.textContent = 'Thinking…';
+  try {
+    const token = await auth.currentUser.getIdToken();
+    const recentMessages = $$('#message-list .room-message small').slice(-5).map(item => item.textContent);
+    const response = await fetch(`${API_BASE}/api/ai/speech`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        forumId: activeForum.firestoreId,
+        country,
+        phase: currentPhase(),
+        priorMessages: recentMessages
+      })
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      if (result.error === 'openai_not_configured') throw new Error('The server needs a new OPENAI_API_KEY.');
+      throw new Error(result.message || 'The AI delegate could not generate a speech.');
+    }
+    appendRoomMessage(`${country} · AI Delegate`, result.text, { ai: true });
+    showToast(`${country}'s speech was generated and saved to Firestore.`);
+  } catch (error) {
+    console.error('AI speech failed', error);
+    showToast(error.message || 'Could not reach the AI speech server.');
+  } finally {
+    button.disabled = false;
+    button.textContent = previousLabel;
+  }
 });
 
 const observer = new IntersectionObserver(entries => entries.forEach(entry => { if (entry.isIntersecting) entry.target.classList.add('visible'); }), { threshold: .12 });
@@ -423,6 +693,8 @@ renderConferences();
 if (auth) {
   auth.onAuthStateChanged(firebaseUser => {
     if (!firebaseUser) {
+      if (forumUnsubscribe) forumUnsubscribe();
+      forumUnsubscribe = null;
       leaveDashboard();
       return;
     }
@@ -432,5 +704,6 @@ if (auth) {
       name: firebaseUser.displayName || friendlyName(firebaseUser.email),
       school: 'Bridge MUN Delegate'
     });
+    subscribeToUserForums(firebaseUser);
   });
 }
